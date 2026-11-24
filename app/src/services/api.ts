@@ -1,6 +1,4 @@
 import { ErrorApi } from './errores';
-import { obtenerToken, olvidarSesion } from '@/composables/useAuth';
-import router from '@/router';
 
 const BASE_URL = import.meta.env.VITE_API_URL;
 const TIEMPO_MAXIMO_MS = 10_000;
@@ -29,6 +27,63 @@ export interface OpcionesApi {
  *  8. En cualquier otro caso, devolver el cuerpo JSON.
  */
 export async function api<T = unknown>(ruta: string, opciones: OpcionesApi = {}): Promise<T> {
-  void [ErrorApi, obtenerToken, olvidarSesion, router, BASE_URL, TIEMPO_MAXIMO_MS, ruta, opciones];
-  throw new Error('TODO [M1] api() sin implementar');
+  const { method = 'GET', body, params } = opciones;
+  const url = new URL(
+    `${BASE_URL.replace(/\/+$/, '')}/${ruta.replace(/^\/+/, '')}`,
+  );
+
+  for (const [nombre, valor] of Object.entries(params ?? {})) {
+    if (valor !== undefined && valor !== '') url.searchParams.set(nombre, String(valor));
+  }
+
+  // Importaciones dinámicas para evitar ciclos de carga entre api, useAuth y router.
+  const { obtenerToken } = await import('@/composables/useAuth');
+  const token = obtenerToken();
+  const headers: Record<string, string> = { Accept: 'application/json' };
+
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const controlador = new AbortController();
+  const temporizador = setTimeout(() => controlador.abort(), TIEMPO_MAXIMO_MS);
+
+  try {
+    const respuesta = await fetch(url, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controlador.signal,
+    });
+
+    if (respuesta.status === 204) return null as T;
+
+    const texto = await respuesta.text();
+    let cuerpo: unknown = null;
+    if (texto) {
+      try {
+        cuerpo = JSON.parse(texto);
+      } catch {
+        cuerpo = null;
+      }
+    }
+
+    if (!respuesta.ok) {
+      if (respuesta.status === 401 && ruta !== '/login') {
+        const { olvidarSesion } = await import('@/composables/useAuth');
+        const { default: router } = await import('@/router');
+        await olvidarSesion();
+        await router.replace('/login');
+      }
+      throw new ErrorApi(respuesta.status, cuerpo);
+    }
+
+    return cuerpo as T;
+  } catch (error) {
+    if (error instanceof ErrorApi) throw error;
+    throw new ErrorApi(0, { mensaje: 'No fue posible conectar con la API.' });
+  } finally {
+    clearTimeout(temporizador);
+  }
 }
