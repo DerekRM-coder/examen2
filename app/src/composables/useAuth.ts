@@ -12,6 +12,7 @@ const CLAVE_USUARIO = 'usuario';
 const token = ref<string | null>(null);
 const usuario = ref<Usuario | null>(null);
 let tokenCargado = false;
+let cargaTokenEnCurso: Promise<void> | null = null;
 
 /** YA IMPLEMENTADO — lo usa services/api.ts para armar el encabezado Authorization. */
 export const obtenerToken = () => token.value;
@@ -26,7 +27,12 @@ export const obtenerToken = () => token.value;
 
 /** TODO [M2] Borrar token y usuario de la memoria (refs) y del almacenamiento cifrado. */
 export async function olvidarSesion() {
-  // TODO [M2]
+  await Promise.allSettled([
+    SecureStorage.remove(CLAVE_TOKEN),
+    SecureStorage.remove(CLAVE_USUARIO),
+  ]);
+  token.value = null;
+  usuario.value = null;
 }
 
 export function useAuth() {
@@ -41,8 +47,20 @@ export function useAuth() {
    *  No atrape el error: LoginPage.vue ya muestra los 422.
    */
   async function login(email: string, password: string) {
-    void [email, password, api, Device, SecureStorage, CLAVE_TOKEN, CLAVE_USUARIO];
-    throw new Error('TODO [M2] login sin implementar');
+    const dispositivo = await Device.getInfo();
+    const device_name = `${dispositivo.platform} ${dispositivo.model}`.slice(0, 60);
+    const respuesta = await api<{ token: string; usuario: Usuario }>('/login', {
+      method: 'POST',
+      body: { email, password, device_name },
+    });
+
+    await SecureStorage.set(CLAVE_TOKEN, respuesta.token);
+    await SecureStorage.set(CLAVE_USUARIO, {
+      id: respuesta.usuario.id,
+      nombre: respuesta.usuario.nombre,
+    });
+    token.value = respuesta.token;
+    usuario.value = respuesta.usuario;
   }
 
   /**
@@ -51,7 +69,28 @@ export function useAuth() {
    *  Debe ejecutarse una sola vez (use la bandera tokenCargado).
    */
   async function cargarToken() {
-    void tokenCargado;
+    if (tokenCargado) return;
+    if (cargaTokenEnCurso) return cargaTokenEnCurso;
+
+    cargaTokenEnCurso = (async () => {
+      try {
+        const tokenGuardado = await SecureStorage.get(CLAVE_TOKEN);
+        const usuarioGuardado = await SecureStorage.get(CLAVE_USUARIO);
+
+        if (typeof tokenGuardado === 'string') token.value = tokenGuardado;
+        if (usuarioGuardado && typeof usuarioGuardado === 'object' && !Array.isArray(usuarioGuardado)) {
+          const datosUsuario = usuarioGuardado as Record<string, unknown>;
+          if (typeof datosUsuario.id === 'number' && typeof datosUsuario.nombre === 'string') {
+            usuario.value = { id: datosUsuario.id, nombre: datosUsuario.nombre };
+          }
+        }
+      } finally {
+        tokenCargado = true;
+        cargaTokenEnCurso = null;
+      }
+    })();
+
+    return cargaTokenEnCurso;
   }
 
   /**
@@ -60,7 +99,11 @@ export function useAuth() {
    *  aunque la API falle (sin red o token vencido).
    */
   async function cerrarSesion() {
-    // TODO [M2]
+    try {
+      await api<null>('/logout', { method: 'POST' });
+    } finally {
+      await olvidarSesion();
+    }
   }
 
   return { usuario, estaAutenticado, login, cargarToken, cerrarSesion };
