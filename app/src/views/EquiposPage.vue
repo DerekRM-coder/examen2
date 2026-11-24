@@ -19,6 +19,10 @@
     </ion-header>
 
     <ion-content>
+      <ion-refresher slot="fixed" @ion-refresh="refrescar">
+        <ion-refresher-content pulling-text="Deslice para actualizar" />
+      </ion-refresher>
+
       <!--
         TODO [M4] Listado (10 pts)
           - ion-refresher (slot="fixed") que vuelve a la página 1.
@@ -33,6 +37,41 @@
         TODO [M6] Eliminación (8 pts)
           - Envuelva cada ion-item en ion-item-sliding con un ion-item-option "Eliminar" (color danger).
       -->
+      <ion-list v-if="cargando && equipos.length === 0 && !error">
+        <ion-item v-for="n in 5" :key="n">
+          <ion-label>
+            <ion-skeleton-text :animated="true" style="width: 65%" />
+            <ion-skeleton-text :animated="true" style="width: 45%" />
+          </ion-label>
+        </ion-item>
+      </ion-list>
+
+      <div v-else-if="error" class="estado-vacio">
+        <ion-icon :icon="cloudOfflineOutline" aria-hidden="true" />
+        <p>{{ error }}</p>
+        <ion-button fill="outline" @click="cargar(true)">Reintentar</ion-button>
+      </div>
+
+      <div v-else-if="!cargando && equipos.length === 0" class="estado-vacio">
+        <ion-icon :icon="searchOutline" aria-hidden="true" />
+        <p>No se encontraron equipos.</p>
+      </div>
+
+      <ion-list v-else>
+        <ion-item v-for="equipo in equipos" :key="equipo.id"
+          :router-link="`/tabs/equipos/${equipo.id}/editar`" detail>
+          <ion-label>
+            <h2>{{ equipo.nombre }}</h2>
+            <p>{{ equipo.codigo }} · {{ equipo.categoria.nombre }}</p>
+          </ion-label>
+          <ion-badge slot="end" :color="colorEstado[equipo.estado]">{{ equipo.estado }}</ion-badge>
+        </ion-item>
+      </ion-list>
+
+      <ion-infinite-scroll :disabled="!hayMas || cargando || !!error || equipos.length === 0"
+        @ion-infinite="cargarMas">
+        <ion-infinite-scroll-content loading-text="Cargando más equipos..." />
+      </ion-infinite-scroll>
     </ion-content>
   </ion-page>
 </template>
@@ -68,6 +107,12 @@ const q = ref('');
 const cargando = ref(false);
 const error = ref('');
 const hayMas = computed(() => pagina.value < ultimaPagina.value);
+let ultimaSolicitud = 0;
+
+function agregarSinDuplicados(nuevos: Equipo[]) {
+  const existentes = new Set(equipos.value.map((equipo) => equipo.id));
+  return [...equipos.value, ...nuevos.filter((equipo) => !existentes.has(equipo.id))];
+}
 
 /**
  * TODO [M4] cargar(reiniciar)
@@ -77,25 +122,54 @@ const hayMas = computed(() => pagina.value < ultimaPagina.value);
  *  - Maneje cargando y error (un 401 ya lo resuelve api.ts).
  */
 async function cargar(reiniciar = false) {
-  void [reiniciar, listar, equipos, pagina, ultimaPagina, cargando, error];
+  if (cargando.value && !reiniciar) return;
+  if (!reiniciar && !hayMas.value) return;
+
+  const solicitud = ++ultimaSolicitud;
+  const paginaSolicitada = reiniciar ? 1 : pagina.value + 1;
+  cargando.value = true;
+  error.value = '';
+
+  try {
+    const respuesta = await listar(paginaSolicitada, q.value);
+    if (solicitud !== ultimaSolicitud) return;
+
+    pagina.value = respuesta.meta.current_page;
+    ultimaPagina.value = respuesta.meta.last_page;
+    equipos.value = reiniciar ? respuesta.data : agregarSinDuplicados(respuesta.data);
+  } catch (ex) {
+    if (solicitud === ultimaSolicitud) {
+      error.value = ex instanceof ErrorApi ? ex.message : 'No fue posible cargar los equipos.';
+    }
+  } finally {
+    if (solicitud === ultimaSolicitud) cargando.value = false;
+  }
 }
 
 /**
  * TODO [M4] La lista debe recargarse CADA VEZ que la persona vuelve a esta página
  *           (por ejemplo, al regresar del formulario). Elija el hook de ciclo de vida correcto.
  */
-void onIonViewWillEnter;
+onIonViewWillEnter(() => cargar(true));
 
 const buscar = () => cargar(true);
 
 /** TODO [M4] Recargar desde la página 1 y cerrar el refresher (evento.target.complete()). */
 async function refrescar(evento: RefresherCustomEvent) {
-  void evento;
+  try {
+    await cargar(true);
+  } finally {
+    evento.target.complete();
+  }
 }
 
 /** TODO [M4] Cargar la página siguiente y cerrar el infinite scroll (evento.target.complete()). */
 async function cargarMas(evento: InfiniteScrollCustomEvent) {
-  void evento;
+  try {
+    await cargar(false);
+  } finally {
+    evento.target.complete();
+  }
 }
 
 /**
