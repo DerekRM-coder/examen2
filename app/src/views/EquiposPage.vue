@@ -58,14 +58,21 @@
       </div>
 
       <ion-list v-else>
-        <ion-item v-for="equipo in equipos" :key="equipo.id"
-          :router-link="`/tabs/equipos/${equipo.id}/editar`" detail>
+        <ion-item-sliding v-for="equipo in equipos" :key="equipo.id">
+          <ion-item :router-link="`/tabs/equipos/${equipo.id}/editar`" detail>
           <ion-label>
             <h2>{{ equipo.nombre }}</h2>
             <p>{{ equipo.codigo }} · {{ equipo.categoria.nombre }}</p>
           </ion-label>
           <ion-badge slot="end" :color="colorEstado[equipo.estado]">{{ equipo.estado }}</ion-badge>
-        </ion-item>
+          </ion-item>
+          <ion-item-options side="end" slot="end">
+            <ion-item-option color="danger" @click="confirmarEliminacion(equipo, $event)">
+              <ion-icon :icon="trashOutline" />
+              Eliminar
+            </ion-item-option>
+          </ion-item-options>
+        </ion-item-sliding>
       </ion-list>
 
       <ion-infinite-scroll :disabled="!hayMas || cargando || !!error || equipos.length === 0"
@@ -108,6 +115,7 @@ const cargando = ref(false);
 const error = ref('');
 const hayMas = computed(() => pagina.value < ultimaPagina.value);
 let ultimaSolicitud = 0;
+const eliminando = new Set<number>();
 
 function agregarSinDuplicados(nuevos: Equipo[]) {
   const existentes = new Set(equipos.value.map((equipo) => equipo.id));
@@ -183,7 +191,45 @@ async function cargarMas(evento: InfiniteScrollCustomEvent) {
  *       404 → quitarlo de la lista y avisar que ya no existe.
  */
 async function confirmarEliminacion(equipo: Equipo, evento: Event) {
-  void [equipo, evento, alertController, ErrorApi, mostrarToast, vibrar, eliminar];
+  if (eliminando.has(equipo.id)) return;
+  eliminando.add(equipo.id);
+
+  try {
+    const sliding = (evento.currentTarget as HTMLElement | null)?.closest('ion-item-sliding') as
+      HTMLIonItemSlidingElement | null;
+    await sliding?.close();
+
+    const alerta = await alertController.create({
+      header: 'Eliminar equipo',
+      message: `¿Desea eliminar ${equipo.nombre}?`,
+      buttons: [
+        { text: 'Cancelar', role: 'cancel' },
+        { text: 'Eliminar', role: 'destructive' },
+      ],
+    });
+    await alerta.present();
+
+    const { role } = await alerta.onDidDismiss();
+    if (role !== 'destructive') return;
+
+    await eliminar(equipo.id);
+    equipos.value = equipos.value.filter((actual) => actual.id !== equipo.id);
+    await vibrar();
+    await mostrarToast('Equipo eliminado correctamente.', 'success');
+  } catch (error) {
+    if (error instanceof ErrorApi && error.status === 409) {
+      await mostrarToast(error.cuerpo?.mensaje ?? error.message, 'warning');
+    } else if (error instanceof ErrorApi && error.status === 404) {
+      equipos.value = equipos.value.filter((actual) => actual.id !== equipo.id);
+      await mostrarToast('El equipo ya no existe.', 'warning');
+    } else if (error instanceof ErrorApi) {
+      await mostrarToast(error.message || 'No fue posible eliminar el equipo.', 'danger');
+    } else {
+      await mostrarToast('No fue posible eliminar el equipo.', 'danger');
+    }
+  } finally {
+    eliminando.delete(equipo.id);
+  }
 }
 
 void [refrescar, cargarMas, confirmarEliminacion, colorEstado, hayMas];
