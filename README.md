@@ -54,13 +54,22 @@ Cada comentario `TODO` describe exactamente lo que se espera. Los archivos marca
 
 ## Evidencia (M8)
 
-Guarde en `app/docs/evidencia-android.png` una captura de **su** app corriendo en el emulador,
-en la pestaña **Perfil** (debe verse *Plataforma: android*), y complete:
+Por limitaciones de RAM, se presenta evidencia de compilación nativa exitosa en lugar de una captura del emulador; la aplicación no se ejecutó en Android.
+La imagen de evidencia se referencia aquí: [evidencia-android.png](app/docs/evidencia-android.png).
 
-- Carné:
-- appId:
-- Versión de Node / Ionic CLI / Capacitor (`node -v`, `ionic -v`, `npx cap -V`):
-- ¿Se generó el APK de depuración? (sí/no):
+La captura real está disponible en [evidencia-android.png](app/docs/evidencia-android.png).
+
+- Carné: C5J209
+- appName: Préstamos Rojas
+- appId: `cr.ac.ucr.if0009.c5j209`
+- Java: 22.0.2
+- Gradle: 8.14.3
+- Android SDK: API 36
+- Versión de Node / Ionic CLI / Capacitor: `24.20.0` / `7.2.1` / `8.6.2`
+- Comandos ejecutados: `npm.cmd run typecheck`, `npm.cmd run build`, `npx.cmd cap sync android`, `gradlew.bat assembleDebug`
+- APK de depuración generado: sí (`app/android/app/build/outputs/apk/debug/app-debug.apk`)
+- Resultado de compilación nativa: `BUILD SUCCESSFUL in 15s`; `243 actionable tasks: 243 up-to-date`.
+- Captura del emulador: no aplica; no se ejecutó la aplicación en Android.
 
 ## Reglas
 
